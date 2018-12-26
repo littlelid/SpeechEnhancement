@@ -2,7 +2,7 @@ import numpy as np
 import scipy
 from scipy.signal import iirfilter, lfilter, freqz
 
-def highpass(siganl, Fs):
+def highpass(signal, Fs):
     '''高通滤波器'''
 
     fc = 300
