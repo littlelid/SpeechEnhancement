@@ -105,3 +105,40 @@ class Beamformer(MicrophoneArray):
 
         return num / denom
 
+
+    def filters_from_weights(self, non_causal=0.):
+        '''
+        Compute time-domain filters from frequency domain weights.
+
+        Parameters
+        ----------
+        non_causal: float, optional
+            ratio of filter coefficients used for non-causal part
+        '''
+
+        if self.weights is None:
+            raise NameError('Weights must be defined.')
+
+        self.filters = np.zeros((self.M, self.Lg))
+
+        if self.N <= self.Lg:
+
+            # go back to time domain and shift DC to center
+            tw = np.fft.irfft(np.conj(self.weights), axis=1, n=self.N)
+            self.filters[:, :self.N] = np.concatenate((tw[:, -self.N // 2:], tw[:, :self.N // 2]), axis=1)
+
+        elif self.N > self.Lg:
+
+            # Least-square projection
+            for i in np.arange(self.M):
+                Lgp = np.floor((1 - non_causal) * self.Lg)
+                Lgm = self.Lg - Lgp
+                # the beamforming weights in frequency are the complex conjugates of the FT of the filter
+                w = np.concatenate((np.conj(self.weights[i]), self.weights[i, -2:0:-1]))
+
+                # create partial Fourier matrix
+                k = np.arange(self.N)[:, np.newaxis]
+                l = np.concatenate((np.arange(self.N - Lgm, self.N), np.arange(Lgp)))
+                F = np.exp(-2j * np.pi * k * l / self.N)
+
+                self.filters[i] = np.real(np.linalg.lstsq(F, w)[0])
