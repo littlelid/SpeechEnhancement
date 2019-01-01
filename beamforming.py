@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg as la
 
-from utils import build_rir_matrix, distance
+from utils import build_rir_matrix, distance, constants
 from scipy.signal import fftconvolve
 
 def H(A, **kwargs):
@@ -108,12 +108,7 @@ class Beamformer(MicrophoneArray):
 
     def filters_from_weights(self, non_causal=0.):
         '''
-        Compute time-domain filters from frequency domain weights.
-
-        Parameters
-        ----------
-        non_causal: float, optional
-            ratio of filter coefficients used for non-causal part
+            将频域的滤波器转化成时域的滤波器
         '''
 
         if self.weights is None:
@@ -142,3 +137,59 @@ class Beamformer(MicrophoneArray):
                 F = np.exp(-2j * np.pi * k * l / self.N)
 
                 self.filters[i] = np.real(np.linalg.lstsq(F, w)[0])
+
+
+    def steering_vector_2D_from_point(self, frequency, source, attn=True, ff=False):
+        ''' Creates a steering vector for a particular frequency and source
+
+        Args:
+            frequency
+            source: location in cartesian coordinates
+            attn: include attenuation factor if True
+            ff:   uses far-field distance if true
+
+        Return:
+            A 2x1 ndarray containing the steering vector.
+        '''
+
+        X = np.array(source)
+        if X.ndim == 1:
+            X = source[:, np.newaxis]
+
+        omega = 2 * np.pi * frequency
+
+        # normalize for far-field if requested
+        if (ff):
+            # unit vectors pointing towards sources
+            p = (X - self.center)
+            p /= np.linalg.norm(p)
+
+            # The projected microphone distances on the unit vectors
+            D = np.dot(self.R.T, p)
+
+            # subtract minimum in each column
+            D -= np.min(D)
+
+        else:
+
+            D = distance(self.R, X)
+
+        phase = np.exp(-1j * omega * D / constants.get('c'))
+
+        if attn:
+            # TO DO 1: This will mean slightly different absolute value for
+            # every entry, even within the same steering vector. Perhaps a
+            # better paradigm is far-field with phase carrier.
+            return 1. / (4 * np.pi) / D * phase
+        else:
+            return phase
+
+    def delay_and_sum_weights(self, source, interferer=None, R_n=None, attn=True, ff=False):
+
+        self.weights = np.zeros((self.M, self.frequencies.shape[0]), dtype=complex)
+
+        K = source.images.shape[1] - 1
+        #K = 1
+        for i, f in enumerate(self.frequencies):
+            W = self.steering_vector_2D_from_point(f, source.images, attn=attn, ff=ff)
+            self.weights[:, i] = 1.0 / self.M / (K + 1) * np.sum(W, axis=1)
