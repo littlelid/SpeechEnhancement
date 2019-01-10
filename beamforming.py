@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.linalg as la
-
+import matplotlib.pyplot as plt
 from utils import build_rir_matrix, distance, constants
 from scipy.signal import fftconvolve
 
@@ -14,15 +14,16 @@ class MicrophoneArray(object):
     def __init__(self, R, fs):
 
         R = np.array(R)
-        self.dim = R.shape[0]
-        self.M = R.shape[1]  # number of microphones
-        self.R = R  # array geometry
-        self.fs = fs  # sampling frequency of microphones
+        self.dim = R.shape[0] # 只考虑2维平面, 所以目前 dim=2
+        self.M = R.shape[1]  # 麦克风数量
+        self.R = R  # 噪声自相关函数， 暂时只考虑高斯白噪声
+        self.fs = fs  # sampling frequency
         self.signals = None
 
         self.center = np.mean(R, axis=1, keepdims=True)
 
     def record(self, signals, fs):
+        '''定义接口,给仿真程序调用，仿真程序会麦克模拟声音,并保存在self.signal'''
         if fs != self.fs:
             try:
                 import samplerate
@@ -34,16 +35,13 @@ class MicrophoneArray(object):
                 for m in range(self.M):
                     self.signals[m] = samplerate.resample(signals[m], fs_ratio, 'sinc_best')
             except ImportError:
-                raise ImportError('The samplerate package must be installed for resampling of the signals.')
-
+                return ImportError("To Be Done")
         else:
             self.signals = signals
 
 class Beamformer(MicrophoneArray):
     '''
-    At some point, in some nice way, the design methods
-    should also go here. Probably with generic arguments.
-    Parameters
+    Beamformer类, 继承MicrophoneArray
     ----------
     R: numpy.ndarray
         麦克风位置
@@ -77,8 +75,7 @@ class Beamformer(MicrophoneArray):
 
     def mvdr_beamformer(self, source, interferer, R_n, delay=0.03, epsilon=5e-3):
         '''
-        Compute the time-domain filters of the minimum variance distortionless
-        response beamformer.
+        计算MVDR的滤波器
         '''
 
         H = build_rir_matrix(self.R, (source, interferer), self.Lg, self.fs, epsilon=epsilon, unit_damping=True)
@@ -94,16 +91,28 @@ class Beamformer(MicrophoneArray):
 
         # Compute the TD filters
         C = la.cho_factor(R_xx + K_nq, check_finite=False)
-        g_val = la.cho_solve(C, h)
+        g_val = la.cho_solve(C, h)  #现在 g_val  = K^{-1} h
 
-        g_val /= np.inner(h, g_val)
+        g_val /= np.inner(h, g_val) #现在  g_val  = (K^{-1} h) / (h^H K^{-1} h))
         self.filters = g_val.reshape((self.M, self.Lg))
 
         # compute and return SNR
-        num = np.inner(g_val.T, np.dot(R_xx, g_val))
-        denom = np.inner(np.dot(g_val.T, K_nq), g_val)
+        sig = np.inner(g_val.T, np.dot(R_xx, g_val))
+        noise = np.inner(np.dot(g_val.T, K_nq), g_val)
 
-        return num / denom
+        return sig / noise
+
+    def get_Rx_and_Knq(self, source, interferer, R_n, delay=0.03, epsilon=5e-3):
+        '''
+        计算信号相关函数 用于估算SNR
+        '''
+
+        H = build_rir_matrix(self.R, (source, interferer), self.Lg, self.fs, epsilon=epsilon, unit_damping=True)
+        L = H.shape[1] // 2
+
+        R_xx = np.dot(H[:, :L], H[:, :L].T)
+        K_nq = np.dot(H[:, L:], H[:, L:].T) + R_n
+        return R_xx, K_nq
 
 
     def filters_from_weights(self, non_causal=0.):
@@ -112,7 +121,7 @@ class Beamformer(MicrophoneArray):
         '''
 
         if self.weights is None:
-            raise NameError('Weights must be defined.')
+            raise TypeError('Weights null.')
 
         self.filters = np.zeros((self.M, self.Lg))
 
@@ -140,16 +149,8 @@ class Beamformer(MicrophoneArray):
 
 
     def steering_vector_2D_from_point(self, frequency, source, attn=True, ff=False):
-        ''' Creates a steering vector for a particular frequency and source
-
-        Args:
-            frequency
-            source: location in cartesian coordinates
-            attn: include attenuation factor if True
-            ff:   uses far-field distance if true
-
-        Return:
-            A 2x1 ndarray containing the steering vector.
+        '''
+        计算steering vector, 用于DSbeamforming
         '''
 
         X = np.array(source)
@@ -158,18 +159,11 @@ class Beamformer(MicrophoneArray):
 
         omega = 2 * np.pi * frequency
 
-        # normalize for far-field if requested
         if (ff):
-            # unit vectors pointing towards sources
             p = (X - self.center)
             p /= np.linalg.norm(p)
-
-            # The projected microphone distances on the unit vectors
             D = np.dot(self.R.T, p)
-
-            # subtract minimum in each column
             D -= np.min(D)
-
         else:
 
             D = distance(self.R, X)
@@ -177,15 +171,14 @@ class Beamformer(MicrophoneArray):
         phase = np.exp(-1j * omega * D / constants.get('c'))
 
         if attn:
-            # TO DO 1: This will mean slightly different absolute value for
-            # every entry, even within the same steering vector. Perhaps a
-            # better paradigm is far-field with phase carrier.
             return 1. / (4 * np.pi) / D * phase
         else:
             return phase
 
     def delay_and_sum_weights(self, source, interferer=None, R_n=None, attn=True, ff=False):
-
+        '''
+        计算DS beamforming的滤波器
+        '''
         self.weights = np.zeros((self.M, self.frequencies.shape[0]), dtype=complex)
 
         K = source.images.shape[1] - 1
@@ -193,3 +186,24 @@ class Beamformer(MicrophoneArray):
         for i, f in enumerate(self.frequencies):
             W = self.steering_vector_2D_from_point(f, source.images, attn=attn, ff=ff)
             self.weights[:, i] = 1.0 / self.M / (K + 1) * np.sum(W, axis=1)
+
+    def rake_max_sinr_filters(self, source, interferer, R_n, epsilon=5e-3, delay=0.):
+        '''
+        '''
+
+        H = build_rir_matrix(self.R, (source, interferer), self.Lg, self.fs, epsilon=epsilon, unit_damping=True)
+        L = H.shape[1] / 2
+
+
+        K_s = np.dot(H[:, :L], H[:, :L].T)
+        K_nq = np.dot(H[:, L:], H[:, L:].T) + R_n
+
+        # 本质上就是generalized Rayleigh问题，直接特征值分解即可~
+        SINR, v = la.eigh(K_s, b=K_nq, eigvals=(self.M * self.Lg - 1, self.M * self.Lg - 1), overwrite_a=True,
+                          overwrite_b=True, check_finite=False)
+        g_val = np.real(v[:, 0])
+
+        self.filters = g_val.reshape((self.M, self.Lg))
+
+
+        return SINR[0]

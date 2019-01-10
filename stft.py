@@ -8,13 +8,12 @@ def stft(x, L, hop, transform=np.fft.fft, win=None, zp_back=0, zp_front=0):
     N = L + zp_back + zp_front
 
     if (win is not None and len(win) != N):
-        print('Window length need to be equal to frame length + zero padding.')
+        print('Window length error.')
         sys.exit(-1)
 
     new_strides = (hop * x.strides[0], x.strides[0])
     new_shape = ((len(x) - L) // hop + 1, L)
     y =  _as_strided(x, shape=new_shape, strides=new_strides)
-
     y = np.concatenate(
             (
                 np.zeros( (y.shape[0], zp_front), dtype=x.dtype),
@@ -24,19 +23,17 @@ def stft(x, L, hop, transform=np.fft.fft, win=None, zp_back=0, zp_front=0):
 
     if (win is not None):
         y = win.astype(x.dtype) * y
-
     Z = transform(y, axis=1)
 
     return Z
 
 
-# inverse STFT
 def istft(X, L, hop, transform=np.fft.ifft, win=None, zp_back=0, zp_front=0):
 
     N = L + zp_back + zp_front
 
     if (win is not None and len(win) != N):
-        print('Window length need to be equal to frame length + zero padding.')
+        print('Window length error.')
         sys.exit(-1)
 
     iX = transform(X, axis=1)

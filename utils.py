@@ -38,8 +38,8 @@ def highpass(signal, Fs):
 
     # normalized cut-off frequency
     wc = 2. * fc / Fs
-    import numpy as np
-    import scipy
+    #import numpy as np
+    #import scipy
     from scipy.signal import iirfilter, lfilter, freqz
     b, a = iirfilter(n, Wn=wc, rp=rp, rs=rs, btype='highpass', ftype='butter')
 
@@ -48,6 +48,7 @@ def highpass(signal, Fs):
     return out
 
 def normalize(signal):
+    '''归一化'''
     return signal / np.max(np.abs(signal))
 
 def hann(N):
@@ -60,9 +61,8 @@ def hann(N):
 
 def distance(x, y):
     '''
-    Computes the distance matrix E.
+    计算两点之间距离.
 
-    E[i,j] = sqrt(sum((x[:,i]-y[:,j])**2)).
     x and y are DxN ndarray containing N D-dimensional vectors.
     '''
 
@@ -78,14 +78,15 @@ def convmtx(x, n):
 
     c = np.concatenate((x, np.zeros(n-1)))
     r = np.zeros(n)
-
     return scipy.linalg.toeplitz(c, r)
 
 def low_pass_dirac(t0, alpha, Fs, N):
     return alpha*np.sinc(np.arange(N) - Fs*t0)
 
 def build_rir_matrix(mics, sources, Lg, Fs, epsilon=5e-3, unit_damping=False):
-
+    '''
+    计算 Room Impulse Response
+    '''
     d_min = np.inf
     d_max = 0.
     dmp_max = 0.
@@ -125,28 +126,26 @@ def build_rir_matrix(mics, sources, Lg, Fs, epsilon=5e-3, unit_damping=False):
     return H
 
 def unit_vec2D(phi):
+    '''用于构建麦克风阵列,计算方向'''
+
     return np.array([[np.cos(phi), np.sin(phi)]]).T
 
 def linear_2D_array(center, M, phi, d):
     '''
-    Creates an array of uniformly spaced linear points in 2D
+    计算二维平面内麦克风阵列的坐标点
+    :param center: array
+        中心麦克风的坐标
+    :param M: int
+        number of microphone
+    :param phi: float
+        摆放角度
+    :param d:  float
+        间距
 
-    Parameters
-    ----------
-    center: array_like
-        The center of the array
-    M: int
-        The number of points
-    phi: float
-        The counterclockwise rotation of the array (from the x-axis)
-    d: float
-        The distance between neighboring points
-
-    Returns
-    -------
-    ndarray (2, M)
-        The array of points
+    :return: ndarray (2, M)
+        M个麦克风的坐标点
     '''
+
     u = unit_vec2D(phi)
     return np.array(center)[:, np.newaxis] + d * \
            (np.arange(M)[np.newaxis, :] - (M - 1.) / 2.) * u
