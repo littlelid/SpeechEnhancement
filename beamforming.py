@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg as la
 import matplotlib.pyplot as plt
-from utils import build_rir_matrix, distance, constants
+from utils import build_rir_matrix, distance, constants, low_pass_dirac,convmtx
 from scipy.signal import fftconvolve
 
 def H(A, **kwargs):
@@ -187,23 +187,55 @@ class Beamformer(MicrophoneArray):
             W = self.steering_vector_2D_from_point(f, source.images, attn=attn, ff=ff)
             self.weights[:, i] = 1.0 / self.M / (K + 1) * np.sum(W, axis=1)
 
-    def rake_max_sinr_filters(self, source, interferer, R_n, epsilon=5e-3, delay=0.):
+    def max_sinr_filters(self, sources, interferers, R_n, epsilon=5e-3):
         '''
         '''
+        Fs = 8000
+        c_speed = 340
+        dist_mat = distance(self.R, sources)
+        s_time = dist_mat / c_speed
+        s_dmp = 1. / (4 * np.pi * dist_mat)
 
-        H = build_rir_matrix(self.R, (source, interferer), self.Lg, self.fs, epsilon=epsilon, unit_damping=True)
-        L = H.shape[1] / 2
+        dist_mat = distance(self.R, interferers)
+        i_time = dist_mat / c_speed
+        i_dmp = 1. / (4 * np.pi * dist_mat)
 
+        # compute offset needed for decay of sinc by epsilon
+        offset = np.maximum(s_dmp.max(), i_dmp.max()) / (np.pi * Fs * epsilon)
+        t_min = np.minimum(s_time.min(), i_time.min())
+        t_max = np.maximum(s_time.max(), i_time.max())
 
+        # adjust timing
+        s_time -= t_min - offset
+        i_time -= t_min - offset
+        Lh = int((t_max - t_min + 2 * offset) * float(Fs))
+
+        # the channel matrix
+        K = sources.shape[1]
+        Lg = self.Lg
+        off = (Lg - Lh) / 2
+        L = self.Lg + Lh - 1
+
+        H = np.zeros((Lg * self.M, 2 * L))
+
+        for r in np.arange(self.M):
+            # build interferer RIR matrix
+            hx = low_pass_dirac(s_time[r, :, np.newaxis], s_dmp[r, :, np.newaxis], Fs, Lh).sum(axis=0)
+            H[r * Lg:(r + 1) * Lg, :L] = convmtx(hx, Lg).T
+
+            # build interferer RIR matrix
+            hq = low_pass_dirac(i_time[r, :, np.newaxis], i_dmp[r, :, np.newaxis], Fs, Lh).sum(axis=0)
+            H[r * Lg:(r + 1) * Lg, L:] = convmtx(hq, Lg).T
+
+        # We first assume the sample are uncorrelated
         K_s = np.dot(H[:, :L], H[:, :L].T)
         K_nq = np.dot(H[:, L:], H[:, L:].T) + R_n
 
-        # 本质上就是generalized Rayleigh问题，直接特征值分解即可~
-        SINR, v = la.eigh(K_s, b=K_nq, eigvals=(self.M * self.Lg - 1, self.M * self.Lg - 1), overwrite_a=True,
-                          overwrite_b=True, check_finite=False)
+        # Compute TD filters using generalized Rayleigh coefficient maximization
+        SINR, v = la.eigh(K_s, b=K_nq, eigvals=(self.M * Lg - 1, self.M * Lg - 1), overwrite_a=True, overwrite_b=True,
+                          check_finite=False)
         g_val = np.real(v[:, 0])
 
-        self.filters = g_val.reshape((self.M, self.Lg))
-
+        self.filters = g_val.reshape((self.M, Lg))
 
         return SINR[0]
