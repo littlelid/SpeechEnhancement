@@ -58,6 +58,7 @@ room1.simulate()
 
 
 # Delay and Sum
+print("Delay and Sum")
 bf.delay_and_sum_weights(room1.sources[0][0:1],
                     room1.sources[1][0:1],
                     sigma2_n*np.eye(int(Lg)*int(M)) )
@@ -66,6 +67,7 @@ output_ds = bf.filter_out()
 output_ds = normalize(highpass(output_ds, Fs))
 
 # MSINR
+print("MSNR")
 bf.max_sinr_filters(room1.sources[0].get_images(max_order=max_order_design),
                     room1.sources[1].get_images(max_order=max_order_design),
                     sigma2_n*np.eye(int(Lg)*int(M)))
@@ -74,6 +76,7 @@ output_sinr = normalize(highpass(output_sinr, Fs))
 
 
 #MVDR
+print("MVDR")
 bf.mvdr_beamformer(room1.sources[0][0:1],
                     room1.sources[1][0:1],
                     sigma2_n*np.eye(int(Lg)*int(M) ), delay=delay)
@@ -145,7 +148,11 @@ ax.set_title("MVDR", fontsize=18)
 
 plt.tight_layout()
 
+
+print("saving fig to ./temp/time_spec.png")
 fig.savefig("./temp/time_spec.png")
+
+print("saving audio to ./time/*.wav")
 wavfile.write("./temp/orginal.wav", Fs, signal1)
 wavfile.write("./temp/interference.wav", Fs, signal2[:len_orign])
 wavfile.write("./temp/MIC.wav", Fs, normalize(highpass(bf.signals[bf.M//2], Fs))[:len_orign])
