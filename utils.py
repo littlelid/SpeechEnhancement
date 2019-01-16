@@ -149,3 +149,4 @@ def linear_2D_array(center, M, phi, d):
     u = unit_vec2D(phi)
     return np.array(center)[:, np.newaxis] + d * \
            (np.arange(M)[np.newaxis, :] - (M - 1.) / 2.) * u
+

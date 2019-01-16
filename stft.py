@@ -3,7 +3,7 @@ from numpy.lib.stride_tricks import as_strided as _as_strided
 import sys
 
 def stft(x, L, hop, transform=np.fft.fft, win=None, zp_back=0, zp_front=0):
-
+    '''短时傅里叶变换'''
 
     N = L + zp_back + zp_front
 
@@ -29,7 +29,7 @@ def stft(x, L, hop, transform=np.fft.fft, win=None, zp_back=0, zp_front=0):
 
 
 def istft(X, L, hop, transform=np.fft.ifft, win=None, zp_back=0, zp_front=0):
-
+    '''逆短时傅里叶变换'''
     N = L + zp_back + zp_front
 
     if (win is not None and len(win) != N):

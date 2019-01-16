@@ -89,7 +89,7 @@ class Beamformer(MicrophoneArray):
         R_xx = np.dot(H[:, :L], H[:, :L].T)
         K_nq = np.dot(H[:, L:], H[:, L:].T) + R_n
 
-        # Compute the TD filters
+        #
         C = la.cho_factor(R_xx + K_nq, check_finite=False)
         g_val = la.cho_solve(C, h)  #现在 g_val  = K^{-1} h
 
@@ -137,7 +137,7 @@ class Beamformer(MicrophoneArray):
             for i in np.arange(self.M):
                 Lgp = np.floor((1 - non_causal) * self.Lg)
                 Lgm = self.Lg - Lgp
-                # the beamforming weights in frequency are the complex conjugates of the FT of the filter
+
                 w = np.concatenate((np.conj(self.weights[i]), self.weights[i, -2:0:-1]))
 
                 # create partial Fourier matrix
@@ -150,7 +150,7 @@ class Beamformer(MicrophoneArray):
 
     def steering_vector_2D_from_point(self, frequency, source, attn=True, ff=False):
         '''
-        计算steering vector, 用于DSbeamforming
+        计算steering vector, 用于DS beamforming
         '''
 
         X = np.array(source)
